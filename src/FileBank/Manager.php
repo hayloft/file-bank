@@ -5,18 +5,20 @@ namespace FileBank;
 use FileBank\Entity\File;
 use FileBank\Entity\Keyword;
 use FileBank\Exception\RuntimeException;
+use Zend\EventManager\EventManagerAwareInterface;
+use Zend\EventManager\EventManagerAwareTrait;
 
-use Doctrine\ORM\Tools\SchemaValidator;
-
-class Manager
+class Manager implements EventManagerAwareInterface
 {
+    use EventManagerAwareTrait;
+
     /**
      * @var Array 
      */
     protected $params;
 
     /**            
-     * @var Doctrine\ORM\EntityManager
+     * @var \Doctrine\ORM\EntityManager
      */                
     protected $em;
     
@@ -26,7 +28,7 @@ class Manager
     protected $cache;
     
     /**
-     * @var FileBank\Entity\File
+     * @var \FileBank\Entity\File
      */
     protected $file;
     
@@ -97,7 +99,7 @@ class Manager
      * Set the Module specific configuration parameters
      * 
      * @param Array $params
-     * @param Doctrine\ORM\EntityManager $em 
+     * @param \Doctrine\ORM\EntityManager $em
      */
     public function __construct($params, $em) {
         $this->params = $params;
@@ -145,7 +147,7 @@ class Manager
      * Get the file entity based on ID
      * 
      * @param integer $fileId
-     * @return FileBank\Entity\File 
+     * @return \FileBank\Entity\File
      * @throws \Exception 
      */
     
@@ -211,7 +213,7 @@ class Manager
      * 
      * @param string $sourceFilePath
      * @param array $keywords
-     * @return FileBank\Entity\File
+     * @return \FileBank\Entity\File
      * @throws \Exception 
      */
     public function save($sourceFilePath, array $keywords = array())
@@ -229,11 +231,19 @@ class Manager
         $this->file->setIsActive($this->params['default_is_active']);
         $this->file->setSavepath($savePath . $hash);
         $this->addKeywordsToFile($keywords);
-        
+
+        $eventParams = [
+            'manager' => $this,
+            'file'    => $this->file,
+            'options' => $this->params,
+        ];
+
+        $this->getEventManager()->trigger(__FUNCTION__, $this, $eventParams);
         $this->em->persist($this->file);
         $this->em->flush();
+        $this->getEventManager()->trigger(__FUNCTION__ . '.post', $this, $eventParams);
         
-        $absolutePath = $this->params['filebank_folder'] . $savePath . $hash;
+        $absolutePath = $this->params['filebank_folder'] . $this->file->getSavePath();
         
         try {
             $this->createPath($absolutePath, $this->params['chmod'], true);
@@ -249,7 +259,7 @@ class Manager
      * Attach keywords to file entity
      * 
      * @param array $keywords
-     * @return FileBank\Entity\File 
+     * @return \FileBank\Entity\File
      */
     protected function addKeywordsToFile(array $keywords) 
     {
@@ -278,7 +288,7 @@ class Manager
      * @param string $mode
      * @param boolean $isFileIncluded
      * 
-     * @throws FileBank\Exception\RuntimeException
+     * @throws \FileBank\Exception\RuntimeException
      */
     protected function createPath($path, $mode, $isFileIncluded)
     {
