@@ -207,29 +207,68 @@ class Manager implements EventManagerAwareInterface
         $this->cache[$id] = $entities;
         return $entities;
     }
+
+    /**
+     * Create FileEntity based on array
+     *
+     * @param  array  $data
+     * @param  string $name Column which stores filename
+     * @return File
+     * @throws \Exception
+     */
+    public function getFileFromArray(array $data, $name = 'name')
+    {
+        $file = new File();
+        $this->getEventManager()->trigger(__FUNCTION__, $this, ['file' => $file, 'data' => $data]);
+
+        $sourceFilePath = null;
+        if (isset($data[$name]) && !$file->getName()) {
+            $file->setName($data[$name]);
+            $sourceFilePath = $data[$name];
+        }
+        if (isset($data['tmp_name'])) {
+            // override name
+            $sourceFilePath = $data['tmp_name'];
+            if (!$file->getName()) {
+                $file->setName(basename($sourceFilePath));
+            }
+        }
+        if (null === $sourceFilePath) {
+            throw new \Exception('No path specified');
+        }
+
+        $mimetype = $this->getMimeType($sourceFilePath);
+        $hash     = md5(microtime(true) . $file->getName());
+        $savePath = substr($hash,0,1).'/'.substr($hash,1,1).'/';
+
+        $file->setMimetype($mimetype);
+        $file->setSize(filesize($sourceFilePath));
+        $file->setIsActive($this->params['default_is_active']);
+        $file->setSavepath($savePath . $hash);
+
+        $this->getEventManager()->trigger(__FUNCTION__ . '.post', $this, ['file' => $file, 'data' => $data]);
+        return $file;
+    }
     
     /**
      * Save file to FileBank database
      * 
-     * @param string $sourceFilePath
-     * @param array $keywords
-     * @return \FileBank\Entity\File
+     * @param  string     $sourceFilePath
+     * @param  array|File $data
+     * @param  array      $keywords
+     * @return File
      * @throws \Exception 
      */
-    public function save($sourceFilePath, array $keywords = array())
+    public function save($sourceFilePath, $data = null, array $keywords = array())
     {
-        $fileName = basename($sourceFilePath);
-        //$mimetype = mime_content_type($sourceFilePath);
-        $mimetype = $this->getMimeType($sourceFilePath);
-        $hash     = md5(microtime(true) . $fileName);
-        $savePath = substr($hash,0,1).'/'.substr($hash,1,1).'/';
+        if ($data instanceof File) {
+            $this->file = $data;
+        } else if (is_array($data)) {
+            $this->file = $this->getFileFromArray($data);
+        } else {
+            $this->file = $this->getFileFromArray(['name' => $sourceFilePath]);
+        }
 
-        $this->file = new File();
-        $this->file->setName($fileName);
-        $this->file->setMimetype($mimetype);
-        $this->file->setSize(filesize($sourceFilePath));
-        $this->file->setIsActive($this->params['default_is_active']);
-        $this->file->setSavepath($savePath . $hash);
         $this->addKeywordsToFile($keywords);
 
         $eventParams = [
