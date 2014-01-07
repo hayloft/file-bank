@@ -11,15 +11,10 @@ namespace FileBank\Service;
 use FileBank\Manager;
 use Zend\Form\Form;
 use FileBank\Form\Upload as UploadForm;
-use FileBank\Entity\File as FileEntity;
-use Zend\EventManager\EventManagerAwareInterface;
-use Zend\EventManager\EventManagerAwareTrait;
 use Zend\Http\Request;
 
-class FileBank implements EventManagerAwareInterface
+class FileBank
 {
-    use EventManagerAwareTrait;
-
     /**
      * @var Manager
      */
@@ -33,7 +28,7 @@ class FileBank implements EventManagerAwareInterface
     /**
      * @param  Request|array $data
      * @param  Form          $form
-     * @return bool|FileEntity
+     * @return array|false
      */
     public function validateForm($data, Form $form = null)
     {
@@ -47,10 +42,40 @@ class FileBank implements EventManagerAwareInterface
 
         $form->setData($data);
         if ($form->isValid()) {
-            $data = $form->getData();
-            return $this->getManager()->getFileFromArray($data['file']);
+            return $form->getData();
         } else {
             return false;
+        }
+    }
+
+    /**
+     * Save data from array
+     *
+     * @param array|Form $files
+     * @param array      $keywords
+     */
+    public function saveData($files, array $keywords = array())
+    {
+        if ($files instanceof Form) {
+            $files = $files->getData();
+        }
+
+        foreach ($files as $file) {
+            $sourceFilePath = null;
+            $name           = null;
+
+            if (isset($file['name'])) {
+                $sourceFilePath = $file['name'];
+                $name           = $file['name'];
+            }
+            if (isset($file['tmp_name'])) {
+                $sourceFilePath = $file['tmp_name'];
+                if (null === $name) {
+                    $name = basename($file['tmp_name']);
+                }
+            }
+
+            $this->getManager()->save($sourceFilePath, $keywords, $name);
         }
     }
 

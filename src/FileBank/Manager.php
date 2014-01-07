@@ -7,31 +7,32 @@ use FileBank\Entity\Keyword;
 use FileBank\Exception\RuntimeException;
 use Zend\EventManager\EventManagerAwareInterface;
 use Zend\EventManager\EventManagerAwareTrait;
+use Doctrine\ORM\Tools\SchemaValidator;
 
 class Manager implements EventManagerAwareInterface
 {
     use EventManagerAwareTrait;
 
     /**
-     * @var Array 
+     * @var Array
      */
     protected $params;
 
-    /**            
+    /**
      * @var \Doctrine\ORM\EntityManager
-     */                
+     */
     protected $em;
-    
+
     /**
      * @var array
      */
     protected $cache;
-    
+
     /**
      * @var \FileBank\Entity\File
      */
     protected $file;
-    
+
     /**
      * @var array
      */
@@ -94,10 +95,10 @@ class Manager implements EventManagerAwareInterface
         'odt' => 'application/vnd.oasis.opendocument.text',
         'ods' => 'application/vnd.oasis.opendocument.spreadsheet',
     );
-    
+
     /**
      * Set the Module specific configuration parameters
-     * 
+     *
      * @param Array $params
      * @param \Doctrine\ORM\EntityManager $em
      */
@@ -109,7 +110,7 @@ class Manager implements EventManagerAwareInterface
 
     /**
      * Detetcs the mimetype of a file
-     * 
+     *
      * @param null $sourceFilePath
      * @param int $mode mode 0 = full check, mode 1 = extension check only
      * @return string
@@ -135,22 +136,22 @@ class Manager implements EventManagerAwareInterface
 
     /**
      * Get the FileBank's root folder
-     * 
-     * @return string 
+     *
+     * @return string
      */
-    public function getRoot() 
+    public function getRoot()
     {
         return $this->params['filebank_folder'];
     }
-    
+
     /**
      * Get the file entity based on ID
-     * 
+     *
      * @param integer $fileId
      * @return \FileBank\Entity\File
-     * @throws \Exception 
+     * @throws \Exception
      */
-    
+
     public function getFileById($fileId)
     {
         // Get the entity from cache if available
@@ -159,49 +160,49 @@ class Manager implements EventManagerAwareInterface
         } else {
             $entity = $this->em->find('FileBank\Entity\File', $fileId);
         }
-        
+
         if (!$entity) {
             throw new \Exception('File does not exist.', 404);
         }
-        
+
         // Cache the file entity so we don't have to access db on each call
         // Enables to get multiple entity's properties at different times
         $this->cache[$fileId] = $entity;
         return $entity;
     }
-    
+
     /**
      * Get array of file entities based on given keyword
-     * 
+     *
      * @param Array $keywords
      * @return Array
-     * @throws \Exception 
+     * @throws \Exception
      */
     public function getFilesByKeywords($keywords)
     {
         // Create unique ID of the array for cache
         $id = md5(serialize($keywords));
-        
+
         // Change all given keywords to lowercase
         $keywords = array_map('strtolower', $keywords );
-        
+
         // Get the entity from cache if available
         if (isset($this->cache[$id])) {
             $entities = $this->cache[$id];
         } else {
             $list = "'" . implode("','", $keywords) . "'";
-            
+
             $q = $this->em->createQuery(
-                    "select f from FileBank\Entity\File f, FileBank\Entity\Keyword k
-                     where k.file = f
-                     and k.value in (" . $list . ")"
-                    );
-            
+                "select f from FileBank\Entity\File f, FileBank\Entity\Keyword k
+                 where k.file = f
+                 and k.value in (" . $list . ")"
+            );
+
             $entities = $q->getResult();
-            
+
             return $entities;
         }
-        
+
         // Cache the file entity so we don't have to access db on each call
         // Enables to get multiple entity's properties at different times
         $this->cache[$id] = $entities;
@@ -209,81 +210,41 @@ class Manager implements EventManagerAwareInterface
     }
 
     /**
-     * Create FileEntity based on array
+     * Save file to FileBank database
      *
-     * @param  array  $data
-     * @param  string $name Column which stores filename
-     * @return File
+     * @param string $sourceFilePath
+     * @param array $keywords
+     * @param string $name Overwrite $fileName
+     * @return \FileBank\Entity\File
      * @throws \Exception
      */
-    public function getFileFromArray(array $data, $name = 'name')
+    public function save($sourceFilePath, array $keywords = array(), $name = null)
     {
-        $file = new File();
-        $this->getEventManager()->trigger(__FUNCTION__, $this, ['file' => $file, 'data' => $data]);
-
-        $sourceFilePath = null;
-        if (isset($data[$name]) && !$file->getName()) {
-            $file->setName($data[$name]);
-            $sourceFilePath = $data[$name];
-        }
-        if (isset($data['tmp_name'])) {
-            // override name
-            $sourceFilePath = $data['tmp_name'];
-            if (!$file->getName()) {
-                $file->setName(basename($sourceFilePath));
-            }
-        }
-        if (null === $sourceFilePath) {
-            throw new \Exception('No path specified');
-        }
-
+        $fileName = basename($sourceFilePath);
+        //$mimetype = mime_content_type($sourceFilePath);
         $mimetype = $this->getMimeType($sourceFilePath);
-        $hash     = md5(microtime(true) . $file->getName());
-        $savePath = substr($hash,0,1).'/'.substr($hash,1,1).'/';
 
-        $file->setMimetype($mimetype);
-        $file->setSize(filesize($sourceFilePath));
-        $file->setIsActive($this->params['default_is_active']);
-        $file->setSavepath($savePath . $hash);
-
-        $this->getEventManager()->trigger(__FUNCTION__ . '.post', $this, ['file' => $file, 'data' => $data]);
-        return $file;
-    }
-    
-    /**
-     * Save file to FileBank database
-     * 
-     * @param  string     $sourceFilePath
-     * @param  array|File $data
-     * @param  array      $keywords
-     * @return File
-     * @throws \Exception 
-     */
-    public function save($sourceFilePath, $data = null, array $keywords = array())
-    {
-        if ($data instanceof File) {
-            $this->file = $data;
-        } else if (is_array($data)) {
-            $this->file = $this->getFileFromArray($data);
-        } else {
-            $this->file = $this->getFileFromArray(['name' => $sourceFilePath]);
-        }
-
+        $this->file = new File();
+        $this->file->setName($name ? $name : $fileName);
+        $this->file->setMimetype($mimetype);
+        $this->file->setSize(filesize($sourceFilePath));
+        $this->file->setIsActive($this->params['default_is_active']);
+        $this->file->setSavepath($this->getSavePath($this->file));
         $this->addKeywordsToFile($keywords);
 
-        $eventParams = [
+        $eventParams = array(
             'manager' => $this,
             'file'    => $this->file,
             'options' => $this->params,
-        ];
+        );
 
         $this->getEventManager()->trigger(__FUNCTION__, $this, $eventParams);
         $this->em->persist($this->file);
         $this->em->flush();
         $this->getEventManager()->trigger(__FUNCTION__ . '.post', $this, $eventParams);
-        
+
         $absolutePath = $this->params['filebank_folder'] . $this->file->getSavePath();
-        
+
         try {
             $this->createPath($absolutePath, $this->params['chmod'], true);
             copy($sourceFilePath, $absolutePath);
@@ -293,14 +254,14 @@ class Manager implements EventManagerAwareInterface
 
         return $this->file;
     }
-    
+
     /**
      * Attach keywords to file entity
-     * 
+     *
      * @param array $keywords
      * @return \FileBank\Entity\File
      */
-    protected function addKeywordsToFile(array $keywords) 
+    protected function addKeywordsToFile(array $keywords)
     {
         if (!empty($keywords)) {
             $keywordEntities = array();
@@ -316,23 +277,23 @@ class Manager implements EventManagerAwareInterface
 
             $this->file->setKeywords($keywordEntities);
         }
-        
+
         return $this->file;
     }
-    
+
     /**
      * Create path recursively
-     * 
+     *
      * @param string $path
      * @param string $mode
      * @param boolean $isFileIncluded
-     * 
+     *
      * @throws \FileBank\Exception\RuntimeException
      */
     protected function createPath($path, $mode, $isFileIncluded)
     {
         $success = true;
-        
+
         if (!is_dir(dirname($path))) {
             if ($isFileIncluded) {
                 $success = mkdir(dirname($path), $mode, true);
@@ -340,9 +301,21 @@ class Manager implements EventManagerAwareInterface
                 $success = mkdir($path, $mode, true);
             }
         }
-        
+
         if (!$success) {
             throw new RuntimeException('Can\'t create filebank storage folders');
         }
+    }
+
+    /**
+     * Generate path for storing file
+     *
+     * @param  File $file
+     * @return string
+     */
+    public function getSavePath(File $file)
+    {
+        $hash = md5(microtime(true) . $file->getName());
+        return substr($hash, 0, 1) . '/' . substr($hash, 1, 1) . '/';
     }
 }

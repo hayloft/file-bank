@@ -8,16 +8,14 @@ use Zend\InputFilter\InputFilter;
 class Upload extends Form
 {
     /**
-     * Set form name
+     * @param null|int|string $name    Optional name for the element
+     * @param array           $options Optional options for the element
      */
-    public function __construct()
+    public function __construct($name = 'file', $options = array())
     {
-        parent::__construct('file');
+        parent::__construct($name, $options);
     }
 
-    /**
-     * Init form
-     */
     public function init()
     {
         $this->setAttribute('method', 'post')

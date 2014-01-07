@@ -2,7 +2,9 @@
 
 namespace FileBank;
 
+use FileBank\Service\FileBank as FileBankService;
 use FileBank\View\Helper\FileBank;
+use Zend\ServiceManager\ServiceLocatorInterface;
 
 class Module
 {
@@ -24,7 +26,13 @@ class Module
     {
         return array(
             'factories' => array(
-                'FileBank' => 'FileBank\Service\Factory',
+                'FileBank'         => 'FileBank\Service\Factory',
+                'FileBank\Service' => function (ServiceLocatorInterface $sm) {
+                    $service = new FileBankService();
+                    $service->setManager($sm->get('FileBank'));
+                    $service->setUploadForm($sm->get('FormElementManager')->get('FileBank\Form\Upload'));
+                    return $service;
+                },
             )
         ); 
     }
